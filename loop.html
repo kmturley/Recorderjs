@@ -4,18 +4,35 @@
     <meta charset="utf-8" />
     <title>Recorder.js Loop</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link href="http://fonts.googleapis.com/css?family=Roboto" rel="stylesheet" />
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+        }
+        a {
+            color: #fff;
+            display: inline-block;
+            padding: 10px 15px;
+            margin: 0 5px 5px 0;
+            background-color: #0088cc;
+            text-decoration: none;
+            -webkit-border-radius: 5px;
+            border-radius: 5px;
+        }
+        a:hover {
+            background-color: #20a8ec;
+        }
+    </style>
 </head>
 <body>
     <h1>Backing</h1>
-    <a href="#" id="play">Play</a>
-    <a href="#" id="stop">Stop</a>
+    <p><a href="#" id="play">&#9654; Play</a><a href="#" id="stop">&#9724; Stop</a></p>
     <h1>Vocals</h1>
-    <a href="#" id="record">Record</a>
-    <a href="#" id="recordStop">Record Stop</a>
-    <a href="#" id="play2">Play</a>
-    <a href="#" id="stop2">Stop</a>
     <p>Offset <input type="range" min="-500" max="0" value="-150" id="offset" step="25" /> <span id="offsetTotal">-150</span>ms</p>
-    <h1>Downloads</h1>
+    <p><a href="#" id="record">&#9864; Record Start</a><a href="#" id="recordStop">&#9724; Record Stop</a></p>
+    <p><a href="#" id="play2">&#9654; Play</a><a href="#" id="stop2">&#9724; Stop</a></p>
+    <h1>Exported</h1>
+    <p><a href="#" id="export">&#10515; Export original</a><a href="#" id="export2">&#10515; Export filled</a></p>
     <div id="downloads"></div>
     <div id="player"></div>
     
@@ -209,44 +226,11 @@
         
         document.getElementById('recordStop').addEventListener('click', function () {
             module.recordStop(function (buffers) {
+                // calculate filled version for looping playback
                 vocalsBuffers = buffers;
                 vocalsRecording = module.createBuffer(vocalsBuffers, 2);
                 vocalsOffset = module.getOffset(vocalsRecording, backingInstance, offset);
                 vocals = module.offsetBuffer(vocalsBuffers, backingInstance, offset, vocalsOffset.before, vocalsOffset.after);
-
-                // export original recording
-                module.recorder.exportWAV(function(blob) {
-                    var url = URL.createObjectURL(blob),
-                        li = document.createElement('li'),
-                        au = document.createElement('audio'),
-                        hf = document.createElement('a');
-
-                    au.controls = true;
-                    au.src = url;
-                    hf.href = url;
-                    hf.download = new Date().toISOString() + '-original.wav';
-                    hf.innerHTML = hf.download;
-                    li.appendChild(au);
-                    li.appendChild(hf);
-                    document.getElementById('downloads').appendChild(li);
-                    
-                    // export modified/filled recording
-                    module.recorder.exportWAV(function(blob) {
-                        var url = URL.createObjectURL(blob),
-                            li = document.createElement('li'),
-                            au = document.createElement('audio'),
-                            hf = document.createElement('a');
-
-                        au.controls = true;
-                        au.src = url;
-                        hf.href = url;
-                        hf.download = new Date().toISOString() + '-modified.wav';
-                        hf.innerHTML = hf.download;
-                        li.appendChild(au);
-                        li.appendChild(hf);
-                        document.getElementById('downloads').appendChild(li);
-                    }, 'audio/wav', vocalsOffset.before, vocalsOffset.after);
-                });
             });
         });
         
@@ -261,7 +245,45 @@
         document.getElementById('offset').addEventListener('change', function (e) {
             offset = e.target.value;
             document.getElementById('offsetTotal').innerHTML = e.target.value;
-            vocals = module.offsetBuffer(vocalsBuffers, backingInstance, offset);
+            vocalsOffset = module.getOffset(vocalsRecording, backingInstance, offset);
+            vocals = module.offsetBuffer(vocalsBuffers, backingInstance, offset, vocalsOffset.before, vocalsOffset.after);
+        });
+        
+        document.getElementById('export').addEventListener('click', function () {
+            // export original recording
+            module.recorder.exportWAV(function(blob) {
+                var url = URL.createObjectURL(blob),
+                    li = document.createElement('li'),
+                    au = document.createElement('audio'),
+                    hf = document.createElement('a');
+
+                au.controls = true;
+                au.src = url;
+                hf.href = url;
+                hf.download = new Date().toISOString().replace('T', '-').slice(0, -5) + '.wav';
+                hf.innerHTML = hf.download;
+                li.appendChild(au);
+                li.appendChild(hf);
+                document.getElementById('downloads').appendChild(li);
+            });
+        });
+        
+        document.getElementById('export2').addEventListener('click', function () {            
+            // export modified/filled recording
+            module.recorder.exportWAV(function(blob) {
+                var url = URL.createObjectURL(blob),
+                    li = document.createElement('li'),
+                    au = document.createElement('audio'),
+                    hf = document.createElement('a');
+                au.controls = true;
+                au.src = url;
+                hf.href = url;
+                hf.download = new Date().toISOString().replace('T', '-').slice(0, -5) + (offset === '0' ? '-' + offset : offset) + 'ms.wav';
+                hf.innerHTML = hf.download;
+                li.appendChild(au);
+                li.appendChild(hf);
+                document.getElementById('downloads').appendChild(li);
+            }, 'audio/wav', vocalsOffset.before, vocalsOffset.after);
         });
     </script>
 </body>

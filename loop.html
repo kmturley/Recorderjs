@@ -27,10 +27,16 @@
 <body>
     <h1>Backing</h1>
     <p><a href="#" id="play">&#9654; Play</a><a href="#" id="stop">&#9724; Stop</a></p>
+    
     <h1>Vocals</h1>
     <p>Offset <input type="range" min="-500" max="0" value="-150" id="offset" step="25" /> <span id="offsetTotal">-150</span>ms</p>
     <p><a href="#" id="record">&#9864; Record Start</a><a href="#" id="recordStop">&#9724; Record Stop</a></p>
     <p><a href="#" id="play2">&#9654; Play</a><a href="#" id="stop2">&#9724; Stop</a></p>
+    
+    <h1>Vocals Sync</h1>
+    <p><a href="#" id="recordSync">&#9864; Record Sync Start</a><a href="#" id="recordSyncStop">&#9724; Record Sync Stop</a></p>
+    <p><a href="#" id="playSync">&#9654; Play Sync</a><a href="#" id="stopSync">&#9724; Stop Sync</a></p>
+    
     <h1>Exported</h1>
     <p><a href="#" id="export">&#10515; Export original</a><a href="#" id="export2">&#10515; Export filled</a></p>
     <div id="downloads"></div>
@@ -97,7 +103,7 @@
             /**
              * @method play
              */
-            play: function (data) {
+            play: function (data, callback) {
                 console.log('player.play', this.context.currentTime, data);
                 var me = this,
                     source = this.context.createBufferSource(),
@@ -110,14 +116,13 @@
                 source.loop = true;
                 source.startTime = this.context.currentTime;
                 source.start(0);
-                console.log('player.play.duration', source.duration);
                 return source;
             },
             /**
              * @method stop
              */
             stop: function (source) {
-                console.log('player.stop', this.context.currentTime);
+                console.log('player.stop', this.context.currentTime, source);
                 if (source) {
                     source.stop(0);
                 }
@@ -127,13 +132,12 @@
              */
             record: function () {
                 console.log('player.record', this.context.currentTime);
-                // should start time be recorded before or after the record function?
                 this.recorder.clear();
                 this.recorder.startTime = this.context.currentTime;
                 this.recorder.record();
             },
             /**
-             * @method record
+             * @method recordStop
              */
             recordStop: function (callback) {
                 var me = this;
@@ -142,6 +146,24 @@
                 this.recorder.getBuffer(function (buffers) {
                     callback(buffers);
                 });
+            },
+            /**
+             * @method sync
+             */
+            sync: function (action, target, param, callback) {
+                var me = this,
+                    offset = (this.context.currentTime - target.startTime) % target.buffer.duration,
+                    time = target.buffer.duration - offset;
+                console.log('player.sync', this.context.currentTime + time, action);
+                if (this.syncTimer) {
+                    window.clearTimeout(this.syncTimer);
+                }
+                this.syncTimer = window.setTimeout(function () {
+                    var returned = me[action](param);
+                    if (callback) {
+                        callback(returned);
+                    }
+                }, time * 1000);
             },
             /**
              * @method createBuffer
@@ -158,7 +180,8 @@
              * @method getOffset
              */
             getOffset: function (vocalsRecording, backingInstance, offset) {
-                var diff = this.recorder.startTime - backingInstance.startTime + (offset / 1000);
+                var diff = (this.recorder.startTime + (offset / 1000)) - backingInstance.startTime;
+                console.log('player.getOffset', diff);
                 return {
                     before: Math.round((diff % backingInstance.buffer.duration) * this.context.sampleRate),
                     after: Math.round((backingInstance.buffer.duration - ((diff + vocalsRecording.duration) % backingInstance.buffer.duration)) * this.context.sampleRate)
@@ -167,13 +190,12 @@
             /**
              * @method offsetBuffer
              */
-            offsetBuffer: function (vocalsBuffers, backingInstance, offset, before, after) {
-                console.log('player.offsetBuffer', vocalsBuffers, backingInstance, offset, before, after);
+            offsetBuffer: function (vocalsBuffers, before, after) {
+                console.log('player.offsetBuffer', vocalsBuffers, before, after);
                 var i = 0,
                     channel = 0,
                     channelTotal = 2,
                     num = 0,
-                    diff = this.recorder.startTime - backingInstance.startTime + (offset / 1000),
                     audioBuffer = this.context.createBuffer(channelTotal, before + vocalsBuffers[0].length + after, this.context.sampleRate),
                     buffer = null;
                 for (channel = 0; channel < channelTotal; channel += 1) {
@@ -200,6 +222,7 @@
         var offset = -150,
             backing = null,
             backingInstance = null,
+            backingOriginal = null,
             vocals = null,
             vocalsBuffers = null,
             vocalsInstance = null,
@@ -212,11 +235,20 @@
             module.cue('90bpm.wav', function (file) {
                 backing = file;
                 backingInstance = module.play(backing);
+                backingOriginal = backingInstance;
             });
         });
 
         document.getElementById('stop').addEventListener('click', function () {
             module.stop(backingInstance);
+        });
+        
+        document.getElementById('play2').addEventListener('click', function () {
+            vocalsInstance = module.play(vocals);
+        });
+
+        document.getElementById('stop2').addEventListener('click', function () {
+            module.stop(vocalsInstance);
         });
 
         document.getElementById('record').addEventListener('click', function () {
@@ -229,24 +261,47 @@
                 // calculate filled version for looping playback
                 vocalsBuffers = buffers;
                 vocalsRecording = module.createBuffer(vocalsBuffers, 2);
-                vocalsOffset = module.getOffset(vocalsRecording, backingInstance, offset);
-                vocals = module.offsetBuffer(vocalsBuffers, backingInstance, offset, vocalsOffset.before, vocalsOffset.after);
+                vocalsOffset = module.getOffset(vocalsRecording, backingOriginal, offset);
+                vocals = module.offsetBuffer(vocalsBuffers, vocalsOffset.before, vocalsOffset.after);
             });
         });
         
-        document.getElementById('play2').addEventListener('click', function () {
-            vocalsInstance = module.play(vocals);
+        document.getElementById('recordSync').addEventListener('click', function () {
+            vocals = null;
+            module.sync('record', backingInstance);
+        });
+        
+        document.getElementById('recordSyncStop').addEventListener('click', function () {
+            module.sync('recordStop', backingInstance, function (buffers) {
+                // calculate filled version for looping playback
+                vocalsBuffers = buffers;
+                vocalsRecording = module.createBuffer(vocalsBuffers, 2);
+                vocalsOffset = module.getOffset(vocalsRecording, backingOriginal, offset);
+                vocals = module.offsetBuffer(vocalsBuffers, vocalsOffset.before, vocalsOffset.after);
+            });
+        });
+        
+        document.getElementById('playSync').addEventListener('click', function () {
+            module.sync('play', backingInstance, vocals, function (data) {
+                vocalsInstance = data;
+            });
         });
 
-        document.getElementById('stop2').addEventListener('click', function () {
-            module.stop(vocalsInstance);
+        document.getElementById('stopSync').addEventListener('click', function () {
+            module.sync('stop', backingInstance, vocalsInstance);
         });
         
         document.getElementById('offset').addEventListener('change', function (e) {
             offset = e.target.value;
             document.getElementById('offsetTotal').innerHTML = e.target.value;
-            vocalsOffset = module.getOffset(vocalsRecording, backingInstance, offset);
-            vocals = module.offsetBuffer(vocalsBuffers, backingInstance, offset, vocalsOffset.before, vocalsOffset.after);
+            vocalsOffset = module.getOffset(vocalsRecording, backingOriginal, offset);
+            vocals = module.offsetBuffer(vocalsBuffers, vocalsOffset.before, vocalsOffset.after);
+            // instant playback
+            module.stop(backingOriginal);
+            module.stop(backingInstance);
+            module.stop(vocalsInstance);
+            backingInstance = module.play(backing);
+            vocalsInstance = module.play(vocals);
         });
         
         document.getElementById('export').addEventListener('click', function () {
